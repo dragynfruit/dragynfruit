@@ -1,0 +1,11 @@
+[package]
+name = "dragynfruit_sync"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "dragynfruit-sync-server"
+path = "src/main.rs"
+required-features = ["server"]
+
+[dependencies]
