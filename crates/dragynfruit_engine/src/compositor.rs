@@ -1,11 +1,7 @@
-use std::rc::Rc;
-
 use compositing::windowing::WindowMethods;
 use compositing_traits::{CompositorProxy, CompositorReceiver};
-use constellation::Constellation;
-use eframe::{egui, egui_glow, glow};
 use webrender::{create_webrender_instance, RenderApi, Renderer};
-use webrender_api::{DocumentId, RenderNotifier};
+use webrender_api::DocumentId;
 use webrender_traits::RenderingContext;
 
 pub struct Compositor {

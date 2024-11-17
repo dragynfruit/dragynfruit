@@ -10,98 +10,91 @@ extern crate script;
 extern crate script_traits;
 // extern crate servo_config;
 // extern crate servo_geometry;
+extern crate ipc_channel;
 extern crate servo_url;
+extern crate surfman;
 // extern crate webrender;
 // extern crate webrender_api;
 // extern crate webrender_traits;
 
-mod compositor;
-mod egui_glow;
+//mod compositor;
+mod egui_glue;
+mod proto;
+//mod egui_glow;
 
-use std::{error::Error, rc::Rc};
+use std::{error::Error, rc::Rc, sync::Arc, time::Instant};
 
-use ::egui_glow::{egui_winit::winit::event_loop::EventLoop, winit};
-use compositing_traits;
-use compositor::Compositor;
-use constellation::Constellation;
-use egui::ViewportBuilder;
-use egui_glow::EguiGlow;
-use embedder_traits::EmbedderProxy;
-use net::protocols::ProtocolRegistry;
-use net_traits::ResourceThreads;
-use script::{document_loader::DocumentLoader, DomObject};
-use script_traits::{InitialScriptState, ServiceWorkerManagerFactory};
-use servo::{
-    compositing::{
-        windowing::{EmbedderCoordinates, EmbedderMethods, WindowMethods},
-        CompositeTarget,
-    },
-    euclid::Size2D,
-    ipc_channel,
-    profile_traits::ipc,
-    webrender_api::RenderNotifier,
-    Servo,
+use compositing::{
+    windowing::{EmbedderCoordinates, EmbedderMethods, WindowMethods},
+    CompositeTarget,
 };
+use eframe::{glow, Frame, NativeOptions};
+use egui::CentralPanel;
+use egui_glow::egui_winit::winit::{
+    self,
+    dpi::{LogicalSize, PhysicalSize},
+    event::Event as WinitEvent,
+    event_loop::ActiveEventLoop,
+    raw_window_handle::{HasRawWindowHandle, HasWindowHandle},
+};
+use egui_glow::egui_winit::winit::{
+    event_loop::EventLoop, raw_window_handle::HasDisplayHandle, window::Window,
+};
+use egui_glue::EguiGlow;
+use net::protocols::{ProtocolHandler, ProtocolRegistry};
+use net_traits::ResourceThreads;
+use script::document_loader::{DocumentLoader, LoadType};
 use servo_url::ServoUrl;
-use webrender::{create_webrender_instance, RenderApi, Renderer, WebRenderOptions};
+use surfman::{Connection, NativeWidget, SurfaceType};
+use webrender::{
+    create_webrender_instance,
+    euclid::{Scale, Size2D},
+    RenderApi, Renderer, WebRenderOptions,
+};
 use webrender_traits::RenderingContext;
 
-pub struct Embedder {}
-impl EmbedderMethods for Embedder {
-    fn get_version_string(&self) -> Option<String> {
-        Some("Dragynfruit".to_owned())
-    }
-    fn get_protocol_handlers(&self) -> ProtocolRegistry {
-        let mut reg = ProtocolRegistry::default();
+//pub struct Embedder {
+//    user_agent: String,
+//}
+//impl EmbedderMethods for Embedder {
+//    fn get_version_string(&self) -> Option<String> {
+//        Some("Dragynfruit".to_owned())
+//    }
+//    fn get_protocol_handlers(&self) -> ProtocolRegistry {
+//        let mut reg = ProtocolRegistry::with_internal_protocols();
+//
+//        reg
+//    }
+//    fn create_event_loop_waker(&mut self) -> Box<dyn embedder_traits::EventLoopWaker> {
+//        Box::new(self.)
+//    }
+//    fn get_user_agent_string(&self) -> Option<String> {
+//        Some(self.user_agent.clone())
+//    }
+//}
 
-        reg.register("about", |url| {
-            //
-        });
-
-        reg
-    }
-    fn create_event_loop_waker(&mut self) -> Box<dyn servo::embedder_traits::EventLoopWaker> {
-        //
-    }
-    fn get_user_agent_string(&self) -> Option<String> {}
+#[derive(Clone)]
+struct RenderNotifier {
+    ctx: egui::Context,
 }
-
-pub struct Window {
-    ctx: eframe::egui::Context,
-    fr: Box<eframe::Frame>,
-}
-impl RenderNotifier for Window {
+impl webrender_api::RenderNotifier for RenderNotifier {
     fn new_frame_ready(
         &self,
-        _: servo::webrender_api::DocumentId,
+        _: webrender_api::DocumentId,
         scrolled: bool,
         composite_needed: bool,
-        frame_publish_id: servo::webrender_api::FramePublishId,
+        frame_publish_id: webrender_api::FramePublishId,
     ) {
-        self.ctx.request_repaint();
+        // TODO: implement this
     }
-}
-impl WindowMethods for Window {
-    fn rendering_context(&self) -> RenderingContext {
-        create_webrender_instance(
-            Rc::new(self.fr.gl().unwrap()),
-            Box::new(self),
-            WebRenderOptions::default(),
-            None,
-        );
+    fn wake_up(&self, composite_needed: bool) {
+        // TODO: implement this
     }
-    fn get_coordinates(&self) -> servo::compositing::windowing::EmbedderCoordinates {
-        EmbedderCoordinates {
-            hidpi_factor: (),
-            screen_size: (),
-            available_screen_size: (),
-            window_rect: (),
-            framebuffer: (),
-            viewport: (),
-        }
+    fn shut_down(&self) {
+        // TODO: implement this
     }
-    fn set_animation_state(&self, _state: servo::compositing::windowing::AnimationState) {
-        //
+    fn clone(&self) -> Box<dyn webrender_api::RenderNotifier> {
+        Box::new(<Self as Clone>::clone(self))
     }
 }
 
@@ -111,25 +104,98 @@ pub struct Engine {
 }
 impl Engine {
     pub fn new() -> Result<(), Box<dyn Error>> {
-        let mut s = Servo::new(embedder, window, None, CompositeTarget::Window);
-        let scr_rt = script::init();
+        let mut ev_loop = EventLoop::with_user_event()
+            .build()
+            .expect("failed to create event loop");
 
-        let mut ctx = egui::Context::default();
-        //
-        let mut ev_loop = EventLoop::new()?;
-        let window = egui_winit::create_window(&ctx, ev_loop, ViewportBuilder::default())?;
+        let attrs = Window::default_attributes()
+            .with_title("Dragynfruit".to_string())
+            .with_inner_size(LogicalSize::new(800, 600))
+            .with_visible(true);
 
-        EguiGlow::new(&ev_loop, gl, shader_version);
+        let win = ev_loop
+            .create_window(attrs)
+            .expect("Failed to create window.");
 
-        let (core_tx, core_rx) = ipc_channel::ipc::channel();
-        let (resource_tx, resource_rx) = ipc_channel::ipc::channel();
+        // #[cfg(any(target_os = "linux", target_os = "windows"))]
+        // {
+        //     let icon_bytes = include_bytes!("../../../resources/servo_64.png");
+        //     winit_window.set_window_icon(Some(load_icon(icon_bytes)));
+        // }
 
-        let resource_threads = ResourceThreads::new(core_tx, resource_tx);
+        let dh = win.display_handle().unwrap();
+        let conn = Connection::from_display_handle(dh).unwrap();
+        let adap = conn.create_adapter().unwrap();
+        let wh = win.window_handle().unwrap();
 
-        let doc_loader = DocumentLoader::new_with_threads(
-            resource_threads,
-            Some(ServoUrl::parse("https://books.toscrape.com/index.html")),
-        );
+        let inner_sz = win.inner_size();
+        let native_widget = conn
+            .create_native_widget_from_window_handle(
+                wh,
+                Size2D::<u32, u32>::new(inner_sz.width, inner_sz.height)
+                    .to_i32()
+                    .to_untyped(),
+            )
+            .expect("Failed to create native widget");
+
+        let surface_type = SurfaceType::Widget { native_widget };
+        let rendering_context = RenderingContext::create(&conn, &adap, surface_type)
+            .expect("Failed to create WR surfman");
+        rendering_context.make_gl_context_current().unwrap();
+
+        //let (core_tx, core_rx) = ipc_channel::ipc::channel()?;
+        //let (resource_tx, resource_rx) = ipc_channel::ipc::channel()?;
+
+        //let resource_threads = ResourceThreads::new(core_tx, resource_tx);
+
+        //let doc_loader = DocumentLoader::new_with_threads(
+        //    resource_threads,
+        //    Some(ServoUrl::parse("https://books.toscrape.com/index.html")?),
+        //);
+
+        let gl = Arc::new(unsafe {
+            glow::Context::from_loader_function(|s| rendering_context.get_proc_address(s))
+        });
+
+        let mut eg = EguiGlow::new(&ev_loop, gl.clone(), None);
+        win.set_visible(true);
+        win.focus_window();
+        let _wait = eg.run(&win, |ctx| {
+            CentralPanel::default().show(ctx, |ui| {
+                if ui.button("a").clicked() {
+                    println!("a");
+                }
+            });
+        });
+        eg.paint(&win);
+        rendering_context.present().unwrap();
+
+        ev_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
+        ev_loop
+            .run(|ev, _ev_loop| {
+                if let WinitEvent::WindowEvent { event, .. } = ev {
+                    if eg.on_window_event(&win, &event).repaint {
+                        let run_st = Instant::now();
+                        let _wait = eg.run(&win, |ctx| {
+                            CentralPanel::default().show(ctx, |ui| {
+                                if ui.button("a").clicked() {
+                                    println!("a");
+                                }
+                            });
+                        });
+                        println!("run: {:?}", run_st.elapsed());
+
+                        let p_st = Instant::now();
+                        eg.paint(&win);
+                        println!("pai: {:?}", p_st.elapsed());
+
+                        let pr_st = Instant::now();
+                        rendering_context.present().expect("failed to present");
+                        println!("pre: {:?}", pr_st.elapsed());
+                    }
+                }
+            })
+            .unwrap();
 
         Ok(())
     }
