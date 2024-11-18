@@ -1,4 +1,4 @@
-use eframe::egui::{self, CentralPanel};
+use egui::{self, CentralPanel};
 
 use crate::Tab;
 

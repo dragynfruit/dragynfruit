@@ -1,4 +1,4 @@
-use eframe::egui::{
+use egui::{
     self, scroll_area::ScrollBarVisibility, Button, CentralPanel, Color32, CursorIcon, Frame, Id,
     Margin, ScrollArea, Sense, Shadow, Spacing, Stroke, Style, TextEdit, TopBottomPanel, Vec2,
 };

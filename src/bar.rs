@@ -1,13 +1,15 @@
-use eframe::egui::{
+use egui::{
     self, scroll_area::ScrollBarVisibility, Button, Color32, Frame, Pos2, RichText, Rounding,
     ScrollArea, Sense, Stroke, Style, TextEdit, TopBottomPanel, Vec2, Window,
 };
 
-use crate::{history::HistoryTab, settings::SettingsTab, userscripts::UserscriptsTab, Home};
+use crate::{
+    history::HistoryTab, settings::SettingsTab, userscripts::UserscriptsTab, Home, WindowState,
+};
 
-impl crate::App {
+impl crate::Window {
     /// Show the top bar
-    pub(crate) fn top_bar(&mut self, ctx: &egui::Context) {
+    pub(crate) fn top_bar(st: &mut WindowState, ctx: &egui::Context) {
         TopBottomPanel::top("top_bar").show(ctx, |ui| {
             ui.add_space(4.0);
             ScrollArea::horizontal()
@@ -15,7 +17,7 @@ impl crate::App {
                 .show(ui, |ui| {
                     ui.horizontal(|ui| {
                         let mut del = None;
-                        let iter = self
+                        let iter = st
                             .tabs
                             .iter()
                             .map(|x| x.title().to_string())
@@ -25,23 +27,23 @@ impl crate::App {
                             let res = TabWidget {
                                 // TODO: this is bad for performance
                                 title: title.clone(),
-                                active: self.current_tab == i,
+                                active: st.current_tab == i,
                             }
                             .ui(ui);
-                            let len = self.tabs.len();
+                            let len = st.tabs.len();
 
                             // Move tabs
                             if res.drag_delta().x == 0.0 {
                             } else if res.drag_delta().x > 10.0 {
-                                self.tabs.swap(i, (i + 1).min(len));
+                                st.tabs.swap(i, (i + 1).min(len));
                             } else if res.drag_delta().x < -10.0 {
-                                self.tabs.swap(i, (i - 1).min(len));
+                                st.tabs.swap(i, (i - 1).min(len));
                             }
 
                             // Switch to this tab if clicked
                             if res.clicked() {
-                                self.current_tab = i;
-                                self.current_url = title;
+                                st.current_tab = i;
+                                st.current_url = title;
                             }
 
                             // Close this tab if middle clicked
@@ -50,7 +52,7 @@ impl crate::App {
                             }
                         }
                         if let Some(del) = del {
-                            self.tabs.remove(del);
+                            st.tabs.remove(del);
                         }
 
                         // Button to open a new tab
@@ -59,7 +61,7 @@ impl crate::App {
                             .on_hover_text("New tab")
                             .clicked()
                         {
-                            self.tabs.push(Box::new(Home::default()));
+                            st.tabs.push(Box::new(Home::default()));
                         }
                     })
                 });
@@ -81,7 +83,7 @@ impl crate::App {
                     // .get(self.current_tab)
                     // .map(|x| x.url())
                     // .unwrap_or("a"),
-                    TextEdit::singleline(&mut self.current_url),
+                    TextEdit::singleline(&mut st.current_url),
                 );
 
                 // Button to open the options menu
@@ -90,7 +92,7 @@ impl crate::App {
                     .on_hover_text("Options")
                     .clicked()
                 {
-                    self.show_options_menu = !self.show_options_menu;
+                    st.show_options_menu = !st.show_options_menu;
                 }
             });
             ui.add_space(4.0);
@@ -98,7 +100,7 @@ impl crate::App {
     }
 
     /// Show the options menu
-    pub(crate) fn options_menu(&mut self, ctx: &egui::Context) {
+    pub(crate) fn options_menu(st: &mut WindowState, ctx: &egui::Context) {
         let mut style = Style::default();
         style.visuals.window_rounding = Rounding::same(5.0);
         Window::new("Options")
@@ -128,8 +130,8 @@ impl crate::App {
                     )
                     .clicked()
                 {
-                    self.tabs.push(Box::new(HistoryTab {}));
-                    self.show_options_menu = false;
+                    st.tabs.push(Box::new(HistoryTab {}));
+                    st.show_options_menu = false;
                 }
                 if ui
                     .add(
@@ -139,8 +141,8 @@ impl crate::App {
                     )
                     .clicked()
                 {
-                    self.tabs.push(Box::new(UserscriptsTab {}));
-                    self.show_options_menu = false;
+                    st.tabs.push(Box::new(UserscriptsTab {}));
+                    st.show_options_menu = false;
                 }
                 ui.separator();
                 if ui
@@ -151,8 +153,8 @@ impl crate::App {
                     )
                     .clicked()
                 {
-                    self.tabs.push(Box::new(SettingsTab {}));
-                    self.show_options_menu = false;
+                    st.tabs.push(Box::new(SettingsTab {}));
+                    st.show_options_menu = false;
                 }
             });
     }

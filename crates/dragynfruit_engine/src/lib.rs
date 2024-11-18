@@ -19,7 +19,7 @@ extern crate surfman;
 
 //mod compositor;
 mod egui_glue;
-mod proto;
+//mod proto;
 //mod egui_glow;
 
 use std::{error::Error, rc::Rc, sync::Arc, time::Instant};
@@ -28,7 +28,6 @@ use compositing::{
     windowing::{EmbedderCoordinates, EmbedderMethods, WindowMethods},
     CompositeTarget,
 };
-use eframe::{glow, Frame, NativeOptions};
 use egui::CentralPanel;
 use egui_glow::egui_winit::winit::{
     self,
@@ -40,10 +39,14 @@ use egui_glow::egui_winit::winit::{
 use egui_glow::egui_winit::winit::{
     event_loop::EventLoop, raw_window_handle::HasDisplayHandle, window::Window,
 };
+use egui_glow::{egui_winit::winit::event::WindowEvent, glow};
 use egui_glue::EguiGlow;
 use net::protocols::{ProtocolHandler, ProtocolRegistry};
 use net_traits::ResourceThreads;
-use script::document_loader::{DocumentLoader, LoadType};
+use script::{
+    document_loader::{DocumentLoader, LoadType},
+    script_thread::ScriptThread,
+};
 use servo_url::ServoUrl;
 use surfman::{Connection, NativeWidget, SurfaceType};
 use webrender::{
@@ -172,26 +175,37 @@ impl Engine {
 
         ev_loop.set_control_flow(winit::event_loop::ControlFlow::Poll);
         ev_loop
-            .run(|ev, _ev_loop| {
+            .run(|ev, ev_loop| {
                 if let WinitEvent::WindowEvent { event, .. } = ev {
-                    if eg.on_window_event(&win, &event).repaint {
-                        let run_st = Instant::now();
-                        let _wait = eg.run(&win, |ctx| {
-                            CentralPanel::default().show(ctx, |ui| {
-                                if ui.button("a").clicked() {
-                                    println!("a");
-                                }
+                    match event {
+                        WindowEvent::RedrawRequested => {
+                            let run_st = Instant::now();
+                            let _wait = eg.run(&win, |ctx| {
+                                CentralPanel::default().show(ctx, |ui| {
+                                    if ui.button("a").clicked() {
+                                        println!("a");
+                                    }
+                                });
                             });
-                        });
-                        println!("run: {:?}", run_st.elapsed());
+                            println!("run: {:?}", run_st.elapsed());
 
-                        let p_st = Instant::now();
-                        eg.paint(&win);
-                        println!("pai: {:?}", p_st.elapsed());
+                            let p_st = Instant::now();
+                            eg.paint(&win);
+                            println!("pai: {:?}", p_st.elapsed());
 
-                        let pr_st = Instant::now();
-                        rendering_context.present().expect("failed to present");
-                        println!("pre: {:?}", pr_st.elapsed());
+                            let pr_st = Instant::now();
+                            rendering_context.present().expect("failed to present");
+                            println!("pre: {:?}", pr_st.elapsed());
+                        }
+                        WindowEvent::CloseRequested => {
+                            eg.destroy();
+                            ev_loop.exit();
+                        }
+                        _ => {
+                            if eg.on_window_event(&win, &event).repaint {
+                                win.request_redraw();
+                            }
+                        }
                     }
                 }
             })
